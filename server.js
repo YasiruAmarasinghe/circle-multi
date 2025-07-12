@@ -1,35 +1,105 @@
+const express = require('express');
+const path = require('path');
+const http = require('http');
+const socketIO = require('socket.io');
 
-// File: server.js 
-const express = require('express'); const http = require('http'); const socketIo = require('socket.io'); const path = require('path');
+const app = express();
+const server = http.createServer(app);
+const io = socketIO(server);
 
-const app = express(); const server = http.createServer(app); const io = socketIo(server, { cors: { origin: '*' } });
+const PORT = process.env.PORT || 3000;
 
-// Serve static files from public folder 
+// Serve static files from the public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Home route (optional)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Game room management
 let waitingPlayer = null;
+let gameRooms = {};
 
-io.on('connection', (socket) => { console.log('A user connected:', socket.id);
+io.on('connection', socket => {
+  console.log('New client connected:', socket.id);
 
-if (waitingPlayer) { const player1 = waitingPlayer; const player2 = socket; const room = player1.id + '#' + player2.id;
+  if (waitingPlayer === null) {
+    waitingPlayer = socket;
+    socket.emit('status', 'Waiting for an opponent...');
+  } else {
+    // Create a room and pair players
+    const roomID = `${waitingPlayer.id}#${socket.id}`;
+    gameRooms[roomID] = {
+      players: [waitingPlayer, socket],
+      scores: {
+        [waitingPlayer.id]: 0,
+        [socket.id]: 0
+      }
+    };
 
-player1.join(room);
-player2.join(room);
+    waitingPlayer.join(roomID);
+    socket.join(roomID);
 
-io.to(room).emit('startGame', { room });
-waitingPlayer = null;
+    // Notify both players
+    waitingPlayer.emit('startGame', { room: roomID });
+    socket.emit('startGame', { room: roomID });
 
-console.log(`Room created: ${room}`);
+    // Clear waiting player
+    waitingPlayer = null;
+  }
 
-} else { waitingPlayer = socket; }
+  // Handle circle click
+  socket.on('clickCircle', ({ room, x }) => {
+    socket.to(room).emit('opponentClicked', { x });
+  });
 
-socket.on('clickCircle', (data) => { socket.to(data.room).emit('opponentClicked', data); });
+  // Handle score updates
+  socket.on('scoreUpdate', ({ room, score }) => {
+    const players = gameRooms[room]?.players;
+    if (players) {
+      gameRooms[room].scores[socket.id] = score;
+      socket.to(room).emit('opponentScore', score);
+    }
+  });
 
-socket.on('scoreUpdate', (data) => { socket.to(data.room).emit('opponentScore', data.score); });
+  // Handle chat messages
+  socket.on('chat', ({ room, message }) => {
+    socket.to(room).emit('chat', { message });
+  });
 
-socket.on('chat', ({ room, message }) => { socket.to(room).emit('chat', { message }); });
+  // Rematch
+  socket.on('rematch', ({ room }) => {
+    io.in(room).emit('rematch');
+  });
 
-socket.on('disconnect', () => { console.log('User disconnected:', socket.id); if (waitingPlayer && waitingPlayer.id === socket.id) { waitingPlayer = null; } }); });
+  // Handle disconnect
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
 
-const PORT = process.env.PORT || 300
+    // Remove from waiting
+    if (waitingPlayer && waitingPlayer.id === socket.id) {
+      waitingPlayer = null;
+    }
 
+    // Remove from active rooms
+    for (const room in gameRooms) {
+      const players = gameRooms[room].players;
+      if (players.some(p => p.id === socket.id)) {
+        // Notify opponent
+        players.forEach(p => {
+          if (p.id !== socket.id) {
+            p.emit('opponentDisconnected');
+          }
+        });
+        delete gameRooms[room];
+        break;
+      }
+    }
+  });
+});
+
+// Start the server
+server.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
