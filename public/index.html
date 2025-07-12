@@ -1,0 +1,145 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Multiplayer Circle Game</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #1e1e2f;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+    }
+    #game {
+      display: flex;
+      width: 100%;
+      max-width: 800px;
+      height: 400px;
+      border: 2px solid #fff;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .circle {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: #0ff;
+      animation: fall 3s linear;
+      cursor: pointer;
+    }
+    @keyframes fall {
+      from { top: -50px; opacity: 0.8; }
+      to { top: 100%; opacity: 1; }
+    }
+    #chatBox {
+      max-height: 150px;
+      overflow-y: auto;
+      margin-top: 10px;
+      background: #222;
+      padding: 10px;
+      border-radius: 5px;
+      width: 100%;
+      max-width: 800px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌐 Online Circle Battle</h1>
+  <p>🧍‍♂️ You: <span id="score">0</span> | 🧍‍♀️ Opponent: <span id="opponent-score">0</span></p>
+  <div id="game"></div>
+  <p id="status">Waiting for opponent...</p>  <div style="margin-top: 10px;">
+    <input id="chatInput" placeholder="Type message..." />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+  <div id="chatBox"></div><button id="rematchBtn" style="display: none; margin-top: 10px;">🔁 Rematch</button>
+
+  <script>
+    const socket = io();
+
+    const game = document.getElementById("game");
+    const scoreDisplay = document.getElementById("score");
+    const opponentScoreDisplay = document.getElementById("opponent-score");
+    const status = document.getElementById("status");
+    const chatInput = document.getElementById("chatInput");
+    const chatBox = document.getElementById("chatBox");
+    const rematchBtn = document.getElementById("rematchBtn");
+
+    let room = null;
+    let score = 0;
+
+    function createCircle(isLocal = true, x = null) {
+      const circle = document.createElement("div");
+      circle.className = "circle";
+      circle.style.left = (x !== null ? x : Math.random() * (game.clientWidth - 50)) + "px";
+      game.appendChild(circle);
+
+      if (isLocal) {
+        socket.emit("clickCircle", { room, x: parseFloat(circle.style.left) });
+
+        circle.onclick = () => {
+          score++;
+          scoreDisplay.textContent = score;
+          socket.emit("scoreUpdate", { room, score });
+          circle.remove();
+        };
+      }
+
+      setTimeout(() => {
+        if (game.contains(circle)) circle.remove();
+      }, 3000);
+    }
+
+    socket.on("startGame", (data) => {
+      room = data.room;
+      status.textContent = "Opponent found! Game started.";
+      rematchBtn.style.display = "none";
+      score = 0;
+      scoreDisplay.textContent = score;
+      opponentScoreDisplay.textContent = "0";
+      setInterval(() => createCircle(true), 1500);
+    });
+
+    socket.on("opponentClicked", (data) => {
+      createCircle(false, data.x);
+    });
+
+    socket.on("opponentScore", (opponentScore) => {
+      opponentScoreDisplay.textContent = opponentScore;
+    });
+
+    socket.on("chat", ({ message }) => {
+      appendMessage("🧍‍♀️ Opponent", message);
+    });
+
+    function sendMessage() {
+      const message = chatInput.value.trim();
+      if (message) {
+        socket.emit("chat", { room, message });
+        appendMessage("🧍‍♂️ You", message);
+        chatInput.value = "";
+      }
+    }
+
+    function appendMessage(sender, message) {
+      const msg = document.createElement("div");
+      msg.textContent = `${sender}: ${message}`;
+      chatBox.appendChild(msg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    rematchBtn.onclick = () => {
+      status.textContent = "Rematch started!";
+      rematchBtn.style.display = "none";
+      score = 0;
+      scoreDisplay.textContent = score;
+      opponentScoreDisplay.textContent = "0";
+      setInterval(() => createCircle(true), 1500);
+    };
+  </script></body>
+      </html>
