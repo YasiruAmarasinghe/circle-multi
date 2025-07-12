@@ -1,0 +1,22 @@
+{
+  "name": "circle-multi",
+  "version": "1.0.0",
+  "description": "Multiplayer arcade game backend using Express and Socket.IO",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "socket.io",
+    "express",
+    "multiplayer",
+    "arcade",
+    "real-time"
+  ],
+  "author": "Ravindu",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}
